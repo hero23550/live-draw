@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -13,6 +14,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using Brush = System.Windows.Media.Brush;
 using Point = System.Windows.Point;
 
@@ -30,6 +32,16 @@ namespace AntFu7.LiveDraw
 
         private const string DefaultSaveDirectoryName = "Save";
 
+        // GLOBAL HOTKEY IMPORTS
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        private IntPtr windowHandle;
+        private HwndSource source;
+
         static MainWindow()
         {
             if (!Mutex.WaitOne(TimeSpan.Zero, true))
@@ -42,12 +54,12 @@ namespace AntFu7.LiveDraw
         {
             _history = new Stack<StrokesHistoryNode>();
             _redoHistory = new Stack<StrokesHistoryNode>();
+
             if (!Directory.Exists(DefaultSaveDirectoryName))
-            {
                 Directory.CreateDirectory(DefaultSaveDirectoryName);
-            }
 
             InitializeComponent();
+
             SetColor(DefaultColorPicker);
             SetEnabled(false);
             SetTopMost(true);
@@ -62,71 +74,69 @@ namespace AntFu7.LiveDraw
             MainInkCanvas.MouseWheel += BrushSize;
         }
 
+        // INIT HOTKEY AFTER WINDOW HANDLE EXISTS
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            SetupHotkeys();
+        }
+
+        // REGISTER ALT + SHIFT + R GLOBAL TOGGLE
+        private void SetupHotkeys()
+        {
+            windowHandle = new WindowInteropHelper(this).Handle;
+            source = HwndSource.FromHwnd(windowHandle);
+            source.AddHook(HwndHook);
+
+            RegisterHotKey(windowHandle, 2300, 0x0001 | 0x0004, 0x52); // ALT + SHIFT + R
+        }
+
+        // HOTKEY LISTENER
+        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_HOTKEY = 0x0312;
+
+            if (msg == WM_HOTKEY)
+            {
+                if (wParam.ToInt32() == 2300)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        SetEnabled(!_isEnabled);
+                    });
+
+                    handled = true;
+                }
+            }
+
+            return IntPtr.Zero;
+        }
+
+        // FIXED EXIT
         private void Exit(object? sender, EventArgs e)
         {
             if (IsUnsaved())
-            {
                 QuickSave("ExitingAutoSave_");
-            }
+
+            if (source != null)
+                source.RemoveHook(HwndHook);
+
+            UnregisterHotKey(windowHandle, 2300);
 
             Application.Current.Shutdown(0);
         }
 
         private bool _saved;
-
-        private bool IsUnsaved()
-        {
-            return MainInkCanvas.Strokes.Count != 0 && !_saved;
-        }
-
-        private bool PromptToSave()
-        {
-            if (!IsUnsaved())
-            {
-                return true;
-            }
-
-            var r = MessageBox.Show("You have unsaved work, do you want to save it now?", "Unsaved data", MessageBoxButton.YesNoCancel);
-            if (r is not (MessageBoxResult.Yes or MessageBoxResult.OK))
-            {
-                return r is MessageBoxResult.No or MessageBoxResult.None;
-            }
-
-            QuickSave();
-            return true;
-        }
+        private bool IsUnsaved() => MainInkCanvas.Strokes.Count != 0 && !_saved;
 
         private ColorPickerButton? _selectedColor;
         private bool _inkVisibility = true;
         private bool _displayDetailPanel;
         private bool _isInEraserMode;
         private bool _isEnabled;
-        private readonly int[] _brushSizes = [3, 5, 8, 13, 20];
+        private readonly int[] _brushSizes = { 3, 5, 8, 13, 20 };
         private int _brushIndex = 1;
         private bool _displayOrientation;
-
-        private void SetDetailPanel(bool v)
-        {
-            if (v)
-            {
-                DetailTogglerRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(180, Duration5));
-                DetailPanel.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Duration4));
-            }
-            else
-            {
-                DetailTogglerRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(0, Duration5));
-                DetailPanel.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, Duration4));
-            }
-            _displayDetailPanel = v;
-        }
-
-        private void SetInkVisibility(bool v)
-        {
-            MainInkCanvas.BeginAnimation(OpacityProperty, v ? new DoubleAnimation(0, 1, Duration3) : new DoubleAnimation(1, 0, Duration3));
-            HideButton.IsActive = !v;
-            SetEnabled(v);
-            _inkVisibility = v;
-        }
 
         private void SetEnabled(bool isEnabled)
         {
@@ -145,9 +155,13 @@ namespace AntFu7.LiveDraw
             else
             {
                 SetStaticInfo("Locked");
-                MainInkCanvas.EditingMode = InkCanvasEditingMode.None; //No inking possible
+                MainInkCanvas.EditingMode = InkCanvasEditingMode.None;
             }
         }
+
+
+    }
+}
 
         private void SetColor(ColorPickerButton bColorPicker)
         {
