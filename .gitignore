@@ -212,3 +212,8 @@ GeneratedArtifacts/
 _Pvt_Extensions/
 ModelManifest.xml
 /LiveDraw/Properties/PublishProfiles
+
+# GitHub Actions publish output
+publish/
+.artifacts/
+
