@@ -14,7 +14,6 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using System.Windows.Interop;
 using Brush = System.Windows.Media.Brush;
 using Point = System.Windows.Point;
 
@@ -22,25 +21,27 @@ namespace AntFu7.LiveDraw
 {
     public partial class MainWindow : Window
     {
-        private int _eraseByPointFlag;
-
-        private static readonly Mutex Mutex = new Mutex(true, "LiveDraw");
-        private static readonly Duration Duration3 = (Duration)Application.Current.Resources["Duration3"];
-        private static readonly Duration Duration4 = (Duration)Application.Current.Resources["Duration4"];
-        private static readonly Duration Duration5 = (Duration)Application.Current.Resources["Duration5"];
-        private static readonly Duration Duration7 = (Duration)Application.Current.Resources["Duration7"];
-
-        private const string DefaultSaveDirectoryName = "Save";
-
-        // GLOBAL HOTKEY IMPORTS
+        #region WinAPI for Global Hotkeys
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        private IntPtr windowHandle;
-        private HwndSource source;
+        private const uint MOD_ALT = 0x0001;
+        private const uint MOD_SHIFT = 0x0004;
+        private const int WM_HOTKEY = 0x0312;
+        #endregion
+
+        private bool _globalHotkeysEnabled = true;
+
+        private int _eraseByPointFlag;
+        private static readonly Mutex Mutex = new Mutex(true, "LiveDraw");
+        private static readonly Duration Duration3 = (Duration)Application.Current.Resources["Duration3"];
+        private static readonly Duration Duration4 = (Duration)Application.Current.Resources["Duration4"];
+        private static readonly Duration Duration5 = (Duration)Application.Current.Resources["Duration5"];
+        private static readonly Duration Duration7 = (Duration)Application.Current.Resources["Duration7"];
+        private const string DefaultSaveDirectoryName = "Save";
 
         static MainWindow()
         {
@@ -54,12 +55,10 @@ namespace AntFu7.LiveDraw
         {
             _history = new Stack<StrokesHistoryNode>();
             _redoHistory = new Stack<StrokesHistoryNode>();
-
             if (!Directory.Exists(DefaultSaveDirectoryName))
                 Directory.CreateDirectory(DefaultSaveDirectoryName);
 
             InitializeComponent();
-
             SetColor(DefaultColorPicker);
             SetEnabled(false);
             SetTopMost(true);
@@ -72,71 +71,146 @@ namespace AntFu7.LiveDraw
             MainInkCanvas.MouseLeftButtonUp += EndLine;
             MainInkCanvas.MouseMove += MakeLine;
             MainInkCanvas.MouseWheel += BrushSize;
+
+            Loaded += (_, __) => RegisterGlobalHotkeys();
+            Closing += (_, __) => UnregisterGlobalHotkeys();
         }
 
-        // INIT HOTKEY AFTER WINDOW HANDLE EXISTS
-        protected override void OnContentRendered(EventArgs e)
+        #region Global Hotkeys
+        private void RegisterGlobalHotkeys()
         {
-            base.OnContentRendered(e);
-            SetupHotkeys();
-        }
-
-        // REGISTER ALT + SHIFT + R GLOBAL TOGGLE
-        private void SetupHotkeys()
-        {
-            windowHandle = new WindowInteropHelper(this).Handle;
-            source = HwndSource.FromHwnd(windowHandle);
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            var source = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
             source.AddHook(HwndHook);
 
-            RegisterHotKey(windowHandle, 2300, 0x0001 | 0x0004, 0x52); // ALT + SHIFT + R
+            // Normal shortcuts (Z, Y, C, B, E)
+            RegisterHotKey(hwnd, 2300, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.Z));
+            RegisterHotKey(hwnd, 2301, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.Y));
+            RegisterHotKey(hwnd, 2302, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.C));
+            RegisterHotKey(hwnd, 2303, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.B));
+            RegisterHotKey(hwnd, 2304, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.E));
+
+            // ALT+SHIFT+R (master toggle)
+            RegisterHotKey(hwnd, 9999, MOD_ALT | MOD_SHIFT, (uint)KeyInterop.VirtualKeyFromKey(Key.R));
         }
 
-        // HOTKEY LISTENER
+        private void UnregisterGlobalHotkeys()
+        {
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            for (int i = 2300; i <= 2304; i++) UnregisterHotKey(hwnd, i);
+            UnregisterHotKey(hwnd, 9999);
+        }
+
         private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
-            const int WM_HOTKEY = 0x0312;
+            if (msg != WM_HOTKEY) return IntPtr.Zero;
 
-            if (msg == WM_HOTKEY)
+            int id = wParam.ToInt32();
+
+            if (id == 9999) // ALT+SHIFT+R
             {
-                if (wParam.ToInt32() == 2300)
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        SetEnabled(!_isEnabled);
-                    });
+                // Toggle drawing mode
+                SetEnabled(!_isEnabled);
 
-                    handled = true;
-                }
+                // Toggle other global hotkeys
+                _globalHotkeysEnabled = !_globalHotkeysEnabled;
+
+                handled = true;
+                return IntPtr.Zero;
             }
 
+            if (!_globalHotkeysEnabled) return IntPtr.Zero;
+
+            Dispatcher.Invoke(() =>
+            {
+                switch (id)
+                {
+                    case 2300: UndoButton_Click(null, null); break;   // Z
+                    case 2301: RedoButton_Click(null, null); break;   // Y
+                    case 2302: ClearButton_Click(null, null); break;  // C
+                    case 2303: SetEnabled(true); break;               // B
+                    case 2304: EraserButton_Click(null, null); break; // E
+                }
+            });
+
+            handled = true;
             return IntPtr.Zero;
         }
+        #endregion
 
-        // FIXED EXIT
+        // --- Keep all your original code below this point ---
+        // All your methods like SetEnabled, SetColor, Undo, Redo, LineMode, StrokesChanged etc.
+        // No changes needed below except remove Window_KeyDown handling if you now want everything global
+        // ALT+SHIFT+R now fully overrides the old R shortcut behavior
+    }
+}
+
+
         private void Exit(object? sender, EventArgs e)
         {
             if (IsUnsaved())
+            {
                 QuickSave("ExitingAutoSave_");
-
-            if (source != null)
-                source.RemoveHook(HwndHook);
-
-            UnregisterHotKey(windowHandle, 2300);
+            }
 
             Application.Current.Shutdown(0);
         }
 
         private bool _saved;
-        private bool IsUnsaved() => MainInkCanvas.Strokes.Count != 0 && !_saved;
+
+        private bool IsUnsaved()
+        {
+            return MainInkCanvas.Strokes.Count != 0 && !_saved;
+        }
+
+        private bool PromptToSave()
+        {
+            if (!IsUnsaved())
+            {
+                return true;
+            }
+
+            var r = MessageBox.Show("You have unsaved work, do you want to save it now?", "Unsaved data", MessageBoxButton.YesNoCancel);
+            if (r is not (MessageBoxResult.Yes or MessageBoxResult.OK))
+            {
+                return r is MessageBoxResult.No or MessageBoxResult.None;
+            }
+
+            QuickSave();
+            return true;
+        }
 
         private ColorPickerButton? _selectedColor;
         private bool _inkVisibility = true;
         private bool _displayDetailPanel;
         private bool _isInEraserMode;
         private bool _isEnabled;
-        private readonly int[] _brushSizes = { 3, 5, 8, 13, 20 };
+        private readonly int[] _brushSizes = [3, 5, 8, 13, 20];
         private int _brushIndex = 1;
         private bool _displayOrientation;
+
+        private void SetDetailPanel(bool v)
+        {
+            if (v)
+            {
+                DetailTogglerRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(180, Duration5));
+                DetailPanel.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Duration4));
+            }
+            else
+            {
+                DetailTogglerRotate.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(0, Duration5));
+                DetailPanel.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, Duration4));
+            }
+            _displayDetailPanel = v;
+        }
+
+        private void SetInkVisibility(bool v)
+        {
+            MainInkCanvas.BeginAnimation(OpacityProperty, v ? new DoubleAnimation(0, 1, Duration3) : new DoubleAnimation(1, 0, Duration3));
+            HideButton.IsActive = !v;
+            SetEnabled(v);
+            _inkVisibility = v;
+        }
 
         private void SetEnabled(bool isEnabled)
         {
@@ -155,13 +229,9 @@ namespace AntFu7.LiveDraw
             else
             {
                 SetStaticInfo("Locked");
-                MainInkCanvas.EditingMode = InkCanvasEditingMode.None;
+                MainInkCanvas.EditingMode = InkCanvasEditingMode.None; //No inking possible
             }
         }
-
-
-    }
-}
 
         private void SetColor(ColorPickerButton bColorPicker)
         {
