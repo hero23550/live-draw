@@ -143,7 +143,7 @@ namespace AntFu7.LiveDraw
         // No changes needed below except remove Window_KeyDown handling if you now want everything global
         // ALT+SHIFT+R now fully overrides the old R shortcut behavior
     }
-}
+
 
 
         private void Exit(object? sender, EventArgs e)
