@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -15,11 +15,147 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Brush = System.Windows.Media.Brush;
 using Point = System.Windows.Point;
+using System.Runtime.InteropServices; 
+using System.Windows.Interop; 
 
 namespace AntFu7.LiveDraw
 {
     public partial class MainWindow : Window
     {
+        // --- START PATCH: Global Hotkey Setup ---
+        // P/Invoke definitions for registering a global hotkey
+        [DllImport("user32.dll")]
+        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+        [DllImport("user32.dll")]
+        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        // Hotkey IDs (Unique integers for each global hotkey)
+        private const int HOTKEY_ID_R = 9000;
+        private const int HOTKEY_ID_C = 9001;
+        private const int HOTKEY_ID_E = 9002;
+        private const int HOTKEY_ID_L = 9003;
+        private const int HOTKEY_ID_Y = 9004;
+        private const int HOTKEY_ID_Z = 9005;
+        private const int HOTKEY_ID_B = 9006; 
+
+        // Virtual Key Codes (Windows API VK_ defines)
+        private const uint VK_R = 0x52; // R
+        private const uint VK_C = 0x43; // C (Clear)
+        private const uint VK_E = 0x45; // E (Eraser)
+        private const uint VK_L = 0x4C; // L (Line)
+        private const uint VK_Y = 0x59; // Y (Redo)
+        private const uint VK_Z = 0x5A; // Z (Undo)
+        private const uint VK_B = 0x42; // B (Brush/Enable)
+
+        // No modifiers (0x0000)
+        private const uint MOD_NONE = 0x0000;
+
+        private IntPtr _windowHandle;
+        private HwndSource _source;
+
+        // Override OnContentRendered to set up the hotkey after the window is rendered
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            SetupHotkeys();
+        }
+
+        private void SetupHotkeys()
+        {
+            // Get the window handle and set up the hook once
+            _windowHandle = new WindowInteropHelper(this).Handle;
+            _source = HwndSource.FromHwnd(_windowHandle);
+            _source.AddHook(HwndHook);
+
+            // R key is registered globally permanently (its function is to toggle mode)
+            if (!RegisterHotKey(_windowHandle, HOTKEY_ID_R, MOD_NONE, VK_R))
+            {
+                Console.WriteLine("Failed to register global 'R' hotkey.");
+            }
+            
+            // Initial call to manage other hotkeys based on the current state of _isEnabled (initially false)
+            UpdateGlobalDrawingHotkeys(_isEnabled);
+        }
+
+        /// <summary>
+        /// Registers or unregisters global hotkeys for drawing actions based on the enabled state.
+        /// </summary>
+        private void UpdateGlobalDrawingHotkeys(bool isEnabled)
+        {
+            if (isEnabled)
+            {
+                // Register global hotkeys for drawing actions (C, E, L, Y, Z, B)
+                RegisterHotKey(_windowHandle, HOTKEY_ID_C, MOD_NONE, VK_C);
+                RegisterHotKey(_windowHandle, HOTKEY_ID_E, MOD_NONE, VK_E);
+                RegisterHotKey(_windowHandle, HOTKEY_ID_L, MOD_NONE, VK_L);
+                RegisterHotKey(_windowHandle, HOTKEY_ID_Y, MOD_NONE, VK_Y);
+                RegisterHotKey(_windowHandle, HOTKEY_ID_Z, MOD_NONE, VK_Z);
+                RegisterHotKey(_windowHandle, HOTKEY_ID_B, MOD_NONE, VK_B); 
+            }
+            else
+            {
+                // Unregister global hotkeys for drawing actions
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_C);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_E);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_L);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_Y);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_Z);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_B);
+            }
+        }
+
+        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_HOTKEY = 0x0312;
+            switch (msg)
+            {
+                case WM_HOTKEY:
+                    switch (wParam.ToInt32())
+                    {
+                        case HOTKEY_ID_R: // Global R: Toggles mode and other global keys
+                            SetEnabled(!_isEnabled);
+                            UpdateGlobalDrawingHotkeys(_isEnabled); // Registers/Unregisters other keys
+                            handled = true;
+                            break;
+                        
+                        // Drawing Keys - Only active if _isEnabled is true
+                        case HOTKEY_ID_C:
+                            AnimatedClear();
+                            handled = true;
+                            break;
+                        case HOTKEY_ID_E:
+                            EraserFunction();
+                            handled = true;
+                            break;
+                        case HOTKEY_ID_L:
+                            LineMode(!_lineMode);
+                            handled = true;
+                            break;
+                        case HOTKEY_ID_Y:
+                            Redo();
+                            handled = true;
+                            break;
+                        case HOTKEY_ID_Z:
+                            Undo();
+                            handled = true;
+                            break;
+                        case HOTKEY_ID_B: // Global B: Sets mode to drawing (brush)
+                            if (_isInEraserMode)
+                            {
+                                SetEraserMode(false);
+                            }
+                            SetEnabled(true);
+                            handled = true;
+                            break;
+                    }
+                    break;
+            }
+            return IntPtr.Zero;
+        }
+        // --- END PATCH: Global Hotkey Setup ---
+
+
         private int _eraseByPointFlag;
 
         private static readonly Mutex Mutex = new Mutex(true, "LiveDraw");
@@ -68,6 +204,16 @@ namespace AntFu7.LiveDraw
             {
                 QuickSave("ExitingAutoSave_");
             }
+
+            // --- START PATCH: Unregister Hotkeys on Exit ---
+            if (_source != null)
+            {
+                _source.RemoveHook(HwndHook);
+                UnregisterHotKey(_windowHandle, HOTKEY_ID_R);
+                // Unregister all drawing hotkeys just in case they were left registered
+                UpdateGlobalDrawingHotkeys(false); 
+            }
+            // --- END PATCH: Unregister Hotkeys on Exit ---
 
             Application.Current.Shutdown(0);
         }
@@ -796,71 +942,36 @@ namespace AntFu7.LiveDraw
 
         private void Window_KeyDown(object? sender, KeyEventArgs e)
         {
-            if (e.Key == Key.R)
+            // Only local key logic remains here (Add/Subtract for brush size).
+            // R, Z, Y, E, L, C, B are now handled by global hotkeys via HwndHook.
+
+            // Add/Subtract keys are kept local as they are modifiers
+            if (e.Key == Key.Add || e.Key == Key.Subtract)
             {
-                SetEnabled(!_isEnabled);
-            }
-
-            if (!_isEnabled)
-            {
-                return;
-            }
-
-            switch (e.Key)
-            {
-                case Key.Z:
-                    Undo();
-                    break;
-
-                case Key.Y:
-                    Redo();
-                    break;
-
-                case Key.E:
-                    EraserFunction();
-                    break;
-
-                case Key.B:
-                    if (_isInEraserMode)
-                    {
-                        SetEraserMode(false);
-                    }
-
-                    SetEnabled(true);
-                    break;
-
-                case Key.L:
-                    if (_isInEraserMode)
-                    {
-                        SetEraserMode(false);
-                    }
-
-                    LineMode(true);
-                    break;
-
-                case Key.Add:
+                if (!_isEnabled) return;
+                if (e.Key == Key.Add)
+                {
                     _brushIndex++;
                     if (_brushIndex > _brushSizes.Length - 1)
                     {
                         _brushIndex = 0;
                     }
-
-                    SetBrushSize(_brushSizes[_brushIndex]);
-                    break;
-
-                case Key.Subtract:
+                }
+                else // Key.Subtract
+                {
                     _brushIndex--;
                     if (_brushIndex < 0)
                     {
                         _brushIndex = _brushSizes.Length - 1;
                     }
-
-                    SetBrushSize(_brushSizes[_brushIndex]);
-                    break;
-
-                case Key.C:
-                    Clear();
-                    break;
+                }
+                SetBrushSize(_brushSizes[_brushIndex]);
+                return;
+            }
+            
+            if (!_isEnabled)
+            {
+                return;
             }
         }
 
