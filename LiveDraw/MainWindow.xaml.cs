@@ -1,9 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -21,26 +20,14 @@ namespace AntFu7.LiveDraw
 {
     public partial class MainWindow : Window
     {
-        #region WinAPI for Global Hotkeys
-        [DllImport("user32.dll")]
-        private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
-
-        [DllImport("user32.dll")]
-        private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-        private const uint MOD_ALT = 0x0001;
-        private const uint MOD_SHIFT = 0x0004;
-        private const int WM_HOTKEY = 0x0312;
-        #endregion
-
-        private bool _globalHotkeysEnabled = true;
-
         private int _eraseByPointFlag;
+
         private static readonly Mutex Mutex = new Mutex(true, "LiveDraw");
         private static readonly Duration Duration3 = (Duration)Application.Current.Resources["Duration3"];
         private static readonly Duration Duration4 = (Duration)Application.Current.Resources["Duration4"];
         private static readonly Duration Duration5 = (Duration)Application.Current.Resources["Duration5"];
         private static readonly Duration Duration7 = (Duration)Application.Current.Resources["Duration7"];
+
         private const string DefaultSaveDirectoryName = "Save";
 
         static MainWindow()
@@ -56,7 +43,9 @@ namespace AntFu7.LiveDraw
             _history = new Stack<StrokesHistoryNode>();
             _redoHistory = new Stack<StrokesHistoryNode>();
             if (!Directory.Exists(DefaultSaveDirectoryName))
+            {
                 Directory.CreateDirectory(DefaultSaveDirectoryName);
+            }
 
             InitializeComponent();
             SetColor(DefaultColorPicker);
@@ -71,80 +60,7 @@ namespace AntFu7.LiveDraw
             MainInkCanvas.MouseLeftButtonUp += EndLine;
             MainInkCanvas.MouseMove += MakeLine;
             MainInkCanvas.MouseWheel += BrushSize;
-
-            Loaded += (_, __) => RegisterGlobalHotkeys();
-            Closing += (_, __) => UnregisterGlobalHotkeys();
         }
-
-        #region Global Hotkeys
-        private void RegisterGlobalHotkeys()
-        {
-            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            var source = System.Windows.Interop.HwndSource.FromHwnd(hwnd);
-            source.AddHook(HwndHook);
-
-            // Normal shortcuts (Z, Y, C, B, E)
-            RegisterHotKey(hwnd, 2300, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.Z));
-            RegisterHotKey(hwnd, 2301, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.Y));
-            RegisterHotKey(hwnd, 2302, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.C));
-            RegisterHotKey(hwnd, 2303, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.B));
-            RegisterHotKey(hwnd, 2304, 0, (uint)KeyInterop.VirtualKeyFromKey(Key.E));
-
-            // ALT+SHIFT+R (master toggle)
-            RegisterHotKey(hwnd, 9999, MOD_ALT | MOD_SHIFT, (uint)KeyInterop.VirtualKeyFromKey(Key.R));
-        }
-
-        private void UnregisterGlobalHotkeys()
-        {
-            var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            for (int i = 2300; i <= 2304; i++) UnregisterHotKey(hwnd, i);
-            UnregisterHotKey(hwnd, 9999);
-        }
-
-        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-        {
-            if (msg != WM_HOTKEY) return IntPtr.Zero;
-
-            int id = wParam.ToInt32();
-
-            if (id == 9999) // ALT+SHIFT+R
-            {
-                // Toggle drawing mode
-                SetEnabled(!_isEnabled);
-
-                // Toggle other global hotkeys
-                _globalHotkeysEnabled = !_globalHotkeysEnabled;
-
-                handled = true;
-                return IntPtr.Zero;
-            }
-
-            if (!_globalHotkeysEnabled) return IntPtr.Zero;
-
-            Dispatcher.Invoke(() =>
-            {
-                switch (id)
-                {
-                    case 2300: UndoButton_Click(null, null); break;   // Z
-                    case 2301: RedoButton_Click(null, null); break;   // Y
-                    case 2302: ClearButton_Click(null, null); break;  // C
-                    case 2303: SetEnabled(true); break;               // B
-                    case 2304: EraserButton_Click(null, null); break; // E
-                }
-            });
-
-            handled = true;
-            return IntPtr.Zero;
-        }
-        #endregion
-
-        // --- Keep all your original code below this point ---
-        // All your methods like SetEnabled, SetColor, Undo, Redo, LineMode, StrokesChanged etc.
-        // No changes needed below except remove Window_KeyDown handling if you now want everything global
-        // ALT+SHIFT+R now fully overrides the old R shortcut behavior
-    }
-
-
 
         private void Exit(object? sender, EventArgs e)
         {
