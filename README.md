@@ -36,6 +36,7 @@ This was forked from [Insire/live-draw](https://github.com/Insire/live-draw) whi
 
 - Downloadable artifact available in actions category.
 - The latest artifact has some QOL fixes to keybind to fix the issues of preventing them from working when the window unfocuses.
+  credit to [Sleepylux](https://github.com/Sleepylux) for the [code](https://github.com/antfu/live-draw/issues/52)
 
 ### Requirements
 
