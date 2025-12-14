@@ -25,32 +25,26 @@ The shortcuts that can be used:
 
 - [ Z ] Undo, [ Y ]  Redo,
 - [ E ] Eraser By Stroke, [ D ]  Eraser By Point,
-- [ R ] Release or Recover interface,
+- [ R ] Release or Recover interface, (This now also toggles the global listenting of your hotkeys. For eg when drawing is toggled to be OFF, other shortcuts except this      are no longer listened, allowing you to use them when not using this program. Toggle drawing to ON to once again enable the listening of other shortcuts!)
 - [ + ] Increase size brush, [ - ]  Decrease size brush
 - [ B ] Brush mode, [ L ]  Line Mode
 - [ C ] Clear
 
 ### About this fork
 
-This was forked from [antfu/live-draw](https://github.com/antfu/live-draw) as of the time of writing this, that repository has been dormant for 3 years. Here is a short summary of the things i changed:
+This was forked from [Insire/live-draw](https://github.com/Insire/live-draw) which is also a fork of [antfu/live-draw](https://github.com/antfu/live-draw) . Here is the things i changed:
 
-- updated from .NET 5 to .NET 9
-- lots of refactoring and renaming to make the code more readable for me (via rider and Visual Studio)
-- updated this readme
-- removed unncessary files(images and settings) and dependencies (namely winforms)
-- minor bugfixes in regards to proper async usage in C#
-- added a shortcut (C) to clear the entire screen
-
-I am aiming to keep this up to date with upcoming .NET releases. I am not looking for adding a lot more features. Feel free to fork this tho.
+- Downloadable artifact available in actions category.
+- The latest artifact has some QOL fixes to keybind to fix the issues of preventing them from working when the window unfocuses.
 
 ### Requirements
 
 - a supported [Windows OS](https://learn.microsoft.com/en-us/windows/release-health/supported-versions-windows-client)
 - [.NET 9 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
 
-#### Why no download?
+#### Download?
 
-Providing a secure and trusted release is actually a lot of work (also costs money) and i updated this over a timespan of 24hrs for my personal use. If you feel like paying for a trusted signing certificate, i might take you up on that and add CI/CD workflow, resulting in a signed release on github.
+If you want to download an unsigned exe you can do so from the actions category of this repository. 
 
 ### Features
 
